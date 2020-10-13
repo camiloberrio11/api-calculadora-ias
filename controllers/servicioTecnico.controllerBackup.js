@@ -1,151 +1,90 @@
 'use strict'
-const { respuestaGenerica, obtenerNumeroSemana, destructurarHora, diferenciaMinutosDosFechas } = require('../utils/general')
+const { respuestaGenerica, obtenerDiaSemana, obtenerNumeroSemana, destructurarHora, diferenciaMinutosDosFechas } = require('../utils/general')
 const ServicioTecnico = require('../model/ServicioTecnico')
-async function validarHorasServicioTecnico (paramsServicio) {
-  const { res, fechaCompletaInicio, fechaCompletaFin, idTenico, diaSemana } = paramsServicio
+async function validarHorasServicioTecnico (params) {
+  const { res, idTenico, idServicio, fechaCompletaInicio, fechaCompletaFin } = params
   try {
-    let modelService = {}
-    modelService.IdServicio = paramsServicio.idServicio
-    modelService.NumeroSemana = obtenerNumeroSemana(new Date(paramsServicio.diaServicio))
-    modelService.IdTecnico = idTenico
-    const minutosCurso = diferenciaMinutosDosFechas(fechaCompletaInicio, fechaCompletaFin)
-    // Campos calculados
-    const horasDominicalesExtras = await obtenerHorasDominicalesExtras(fechaCompletaInicio, fechaCompletaFin, minutosCurso, diaSemana, idTenico)
-    const horasNocturasExtras = await obtenerHorasNocturasExtras(fechaCompletaInicio, fechaCompletaFin, horasDominicalesExtras.nuevosMinutosCurso, diaSemana, idTenico)
-    const horasNormalesExtras = await obtenerHorasNormalesExtras(fechaCompletaInicio, fechaCompletaFin, horasNocturasExtras.nuevosMinutosCurso, diaSemana, idTenico)
-    const horasDominicales = obtenerHorasDominicales(fechaCompletaInicio, fechaCompletaFin, horasNormalesExtras.nuevosMinutosCurso, diaSemana)
-    const horasNocturas = obtenerHorasNocturas(fechaCompletaInicio, fechaCompletaFin, horasDominicales.nuevosMinutosCurso, diaSemana)
-    const horasNormales = obtenerHorasNormales(fechaCompletaInicio, fechaCompletaFin, horasNocturas.nuevosMinutosCurso, diaSemana)
-    return respuestaGenerica(200, `Se ha guardado el servicio ${paramsServicio.idServicio}`, null, true, res)
+    const numSemana = obtenerNumeroSemana(fechaCompletaInicio)
+    const minutosDelServicio = diferenciaMinutosDosFechas(fechaCompletaInicio, fechaCompletaFin)
+    const horasNormalesExtras = await obtenerHorasNormalesExtras(numSemana, idTenico, fechaCompletaInicio, fechaCompletaFin, minutosDelServicio)
+    const horasNocturasExtras = await obtenerHorasNocturasExtras(numSemana, idTenico, fechaCompletaInicio, fechaCompletaFin, horasNormalesExtras.minutosCurso)
+    return respuestaGenerica(200, `Se ha guardado el servicio ${idServicio}`, null, true, res)
   } catch (error) {
     const { message } = error
     return respuestaGenerica(500, null, message, false, res)
   }
 }
 
-function obtenerHorasNormales (fechaInicio, fechaFin, minutosEnCurso, diaSemana) {
-  let horasTrabadas = 0
-  let nuevosMinutosCurso = 0
+async function obtenerHorasNormalesExtras (numSemana, idTecnico, fechaInicio, fechaFin, minutosCurso) {
+  const diaServicio = obtenerDiaSemana(fechaInicio)
   const { hora: horaInicio } = destructurarHora(fechaInicio)
   const { hora: horaFin } = destructurarHora(fechaFin)
-  if (horaInicio >= 7 && horaFin <= 20 && diaSemana > 0 && diaSemana < 7 && minutosEnCurso > 0) {
-    horasTrabadas = minutosEnCurso / 60
-    nuevosMinutosCurso = minutosEnCurso - (horasTrabadas * 60)
-  }
-  return {
-    horasNormales: horasTrabadas,
-    nuevosMinutosCurso
-  }
-}
-
-function obtenerHorasNocturas (fechaInicio, fechaFin, minutosEnCurso, diaSemana) {
-  let horasTrabadas = 0
-  let nuevosMinutosCurso = minutosEnCurso
-  const { hora: horaInicio } = destructurarHora(fechaInicio)
-  const { hora: horaFin } = destructurarHora(fechaFin)
-  if (horaInicio > 20 && horaFin < 7 && diaSemana > 0 && diaSemana < 7 && minutosEnCurso > 0) {
-    horasTrabadas = minutosEnCurso / 60
-    nuevosMinutosCurso = minutosEnCurso - (horasTrabadas * 60)
-  }
-  return {
-    horasNocturas: horasTrabadas,
-    nuevosMinutosCurso
-  }
-}
-
-function obtenerHorasDominicales (fechaInicio, fechaFin, minutosEnCurso, diaSemana) {
-  let horasTrabadas = 0
-  let nuevosMinutosCurso = minutosEnCurso
-  if (diaSemana === 7 && minutosEnCurso > 0) {
-    horasTrabadas = minutosEnCurso / 60
-    nuevosMinutosCurso = minutosEnCurso - (horasTrabadas * 60)
-  }
-  return {
-    horasDominicales: horasTrabadas,
-    nuevosMinutosCurso
-  }
-}
-
-async function obtenerHorasNormalesExtras (fechaInicio, fechaFin, minutosEnCurso, diaSemana, idTecnico) {
-  let horasTrabadas = 0
-  let nuevosMinutosCurso = minutosEnCurso
-  const { hora: horaInicio } = destructurarHora(fechaInicio)
-  const { hora: horaFin } = destructurarHora(fechaFin)
-  if (diaSemana > 0 && diaSemana < 7 && horaInicio >= 7 && horaFin <= 20 && minutosEnCurso > 0) {
-    const existeSemana = await calcularHorasTotalXSemanaXIdTecnico(diaSemana, idTecnico)
-    if (existeSemana) {
-      horasTrabadas = minutosEnCurso / 60
-      nuevosMinutosCurso = minutosEnCurso - (horasTrabadas * 60)
+  let horasTrabajadas = 0
+  if (diaServicio > 0 && diaServicio < 7 && minutosCurso > 0 && (horaInicio >= 7 && horaInicio <= 20)) {
+    const sumaTotal = await sumaHorasPorIdTecnicoNumSemana(idTecnico, numSemana)
+    if (sumaTotal > 48) {
+      const [fechaSet] = fechaFin.split('T')
+      const diferenciaMinutos = diferenciaMinutosDosFechas(fechaInicio, `${fechaSet}T20:00:00.000Z`)
+      if (diferenciaMinutos < minutosCurso) {
+        horasTrabajadas = diferenciaMinutos / 60
+        minutosCurso = minutosCurso - diferenciaMinutos
+      } else {
+        const diferenciaMinutosFin = diferenciaMinutosDosFechas(fechaInicio, fechaFin)
+        horasTrabajadas = diferenciaMinutosFin / 60
+        minutosCurso = minutosCurso - diferenciaMinutosFin
+      }
     }
   }
   return {
-    horasNormalesExtras: horasTrabadas,
-    nuevosMinutosCurso
+    horasTrabajadas,
+    minutosCurso
   }
 }
 
-async function obtenerHorasNocturasExtras (fechaInicio, fechaFin, minutosEnCurso, diaSemana, idTecnico) {
-  let horasTrabadas = 0
-  let nuevosMinutosCurso = minutosEnCurso
+async function obtenerHorasNocturasExtras (numSemana, idTecnico, fechaInicio, fechaFin, minutosCurso) {
+  const diaServicio = obtenerDiaSemana(fechaInicio)
   const { hora: horaInicio } = destructurarHora(fechaInicio)
   const { hora: horaFin } = destructurarHora(fechaFin)
-  if (diaSemana > 0 && diaSemana < 7 && horaInicio > 20 && horaFin < 7 && minutosEnCurso > 0) {
-    const existeSemana = await calcularHorasTotalXSemanaXIdTecnico(diaSemana, idTecnico)
-    if (existeSemana) {
-      horasTrabadas = minutosEnCurso / 60
-      nuevosMinutosCurso = minutosEnCurso - (horasTrabadas * 60)
+  let horasTrabajadas = 0
+  if (diaServicio > 0 && diaServicio < 7 && minutosCurso > 0 && (horaInicio > 20 || horaInicio < 7)) {
+    const sumaTotal = await sumaHorasPorIdTecnicoNumSemana(idTecnico, numSemana)
+    if (sumaTotal > 48) {
+      const [fechaSet] = fechaFin.split('T')
+      const diferenciaMinutos = diferenciaMinutosDosFechas(fechaInicio, `${fechaSet}T20:00:00.000Z`)
+      if (diferenciaMinutos < minutosCurso) {
+        horasTrabajadas = diferenciaMinutos / 60
+        minutosCurso = minutosCurso - diferenciaMinutos
+      } else {
+        const diferenciaMinutosFin = diferenciaMinutosDosFechas(fechaInicio, fechaFin)
+        horasTrabajadas = diferenciaMinutosFin / 60
+        minutosCurso = minutosCurso - diferenciaMinutosFin
+      }
     }
   }
   return {
-    horasNocturasExtras: horasTrabadas,
-    nuevosMinutosCurso
+    horasTrabajadas,
+    minutosCurso
   }
 }
-
-async function obtenerHorasDominicalesExtras (fechaInicio, fechaFin, minutosEnCurso, diaSemana, idTecnico) {
-  let horasTrabadas = 0
-  let nuevosMinutosCurso = minutosEnCurso
-  if (diaSemana === 7 && minutosEnCurso > 0) {
-    const existeSemana = await calcularHorasTotalXSemanaXIdTecnico(diaSemana, idTecnico)
-    if (existeSemana) {
-      horasTrabadas = minutosEnCurso / 60
-      nuevosMinutosCurso = minutosEnCurso - (horasTrabadas * 60)
+async function sumaHorasPorIdTecnicoNumSemana (idTecnico, numSemana) {
+  const existe = await ServicioTecnico.find({ IdTecnico: idTecnico, NumeroSemana: numSemana })
+  let sumaTotal = 0
+  if (existe.length > 0) {
+    for (const item of existe) {
+      sumaTotal = sumaTotal + +item.HorasNormales + item.HorasNocturnas + item.HorasDominicales + item.HorasNormalesExtras + item.HorasNocturasExtras + item.HorasDominicalesExtras
     }
   }
-  return {
-    horasDominicalesExtras: horasTrabadas,
-    nuevosMinutosCurso
-  }
+  return sumaTotal
 }
 
-async function calcularHorasTotalXSemanaXIdTecnico (NumeroSemana, IdTecnico) {
-  const exist = await ServicioTecnico.findOne({ IdTecnico, NumeroSemana })
-  if (exist) {
-
-  }
-  return false
-}
-
-async function guardarServicio (model) {
-  const servicioTecnico = new ServicioTecnico(model)
-  await servicioTecnico.save()
-}
-
-// async function obtenerHorasPorSemanaIdTecnico (numSemana, idTecnico) {
-//   let suma
-//   const existeReporte = await ServicioTecnico.findOne({})
-//   if (existeReporte) {
-//     suma = +existeReporte.HorasNormales + existeReporte.HorasNocturnas + existeReporte + existeReporte.HorasDominicales + existeReporte.HorasNormalesExtras + existeReporte.HorasNocturasExtras + existeReporte.orasDominicalesExtras
-//   }
-//   return suma
-// }
-
-async function obtenerReporteServicioXIdTecnico (paramsServicio) {
-  const { res, idtecnico, numsemana } = paramsServicio
+async function obtenerReporteServicioXIdTecnico (params) {
+  const { res, idtecnico, numsemana } = params
   try {
-    const existeServicio = await ServicioTecnico.findOne({ NumeroSemana: numsemana, IdTecnico: idtecnico })
-    // sumar columnas y retornar unico resultado
-    return respuestaGenerica(200, existeServicio, null, true, res)
+    const listadoServicios = await ServicioTecnico.find({ IdTecnico: idtecnico, NumeroSemana: numsemana }, { _id: false })
+    if (listadoServicios.length < 1) {
+      return respuestaGenerica(200, `No se han encontrado resultados para la semana ${numsemana}`, null, false, res)
+    }
+    return respuestaGenerica(200, listadoServicios, null, true, res)
   } catch (error) {
     const { message } = error
     return respuestaGenerica(500, null, message, false, res)
